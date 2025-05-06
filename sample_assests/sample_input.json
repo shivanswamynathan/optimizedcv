@@ -1,0 +1,137 @@
+{
+  "basics": {
+    "name": "John Doe",
+    "label": "",
+    "email": "john.doe@example.com",
+    "phone": "(609) 999-9995",
+    "url": "",
+    "summary": "",
+    "location": {
+      "city": "",
+      "countryCode": ""
+    },
+    "profiles": [
+      {
+        "network": "linkedin",
+        "username": "john.doe",
+        "url": "https://linkedin.com/in/john.doe"
+      },
+      {
+        "network": "github",
+        "username": "john.doe",
+        "url": "https://github.com/john.doe"
+      }
+    ]
+  },
+  "work": [
+    {
+      "name": "Company C",
+      "position": "Summer Intern",
+      "location": "Livingston, LA, USA",
+      "startDate": "2024-06",
+      "endDate": "2024-09",
+      "highlights": [
+        "Developed deep learning models for the detection of gravitational waves in LIGO data",
+        "Published 3 peer-reviewed research papers about the project and results"
+      ]
+    },
+    {
+      "name": "Company B",
+      "position": "Summer Intern",
+      "location": "Ankara, T\u00fcrkiye",
+      "startDate": "2023-06",
+      "endDate": "2023-09",
+      "highlights": [
+        "Optimized the production line by 15% by implementing a new scheduling algorithm"
+      ]
+    },
+    {
+      "name": "Company A",
+      "position": "Summer Intern",
+      "location": "Istanbul, T\u00fcrkiye",
+      "startDate": "2022-06",
+      "endDate": "2022-09",
+      "highlights": [
+        "Designed an inventory management web application for a warehouse"
+      ]
+    }
+  ],
+  "education": [
+    {
+      "institution": "Stanford University",
+      "area": "Computer Science",
+      "studyType": "PhD",
+      "startDate": "2023-09",
+      "endDate": "present",
+      "courses": [
+        "Optimization of autonomous vehicles in urban environments"
+      ]
+    },
+    {
+      "institution": "Bo\u011fazi\u00e7i University",
+      "area": "Computer Engineering",
+      "studyType": "BS",
+      "startDate": "2018-09",
+      "endDate": "2022-06",
+      "courses": []
+    }
+  ],
+  "skills": [
+    {
+      "name": "Programming",
+      "keywords": [
+        "Python",
+        "C++",
+        "Git",
+        "Web development",
+        "DevOps"
+      ]
+    },
+    {
+      "name": "Mathematics",
+      "keywords": [
+        "Differential equations",
+        "Calculus",
+        "Linear algebra"
+      ]
+    },
+    {
+      "name": "Languages",
+      "keywords": [
+        "English",
+        "Turkish"
+      ]
+    }
+  ],
+  "projects": [
+    {
+      "name": "Example Project",
+      "description": "A web application for writing essays. Launched an iOS app in 09/2024 that currently has 10k+ monthly active users. The app is made open-source (3,000+ stars on GitHub)",
+      "startDate": "2024-05",
+      "endDate": "present"
+    }
+  ],
+  "publications": [
+    {
+      "name": "3D Finite Element Analysis of No-Insulation Coils",
+      "releaseDate": "Jan 2004",
+      "authors": [
+        "Frodo Baggins",
+        "John Doe",
+        "Samwise Gamgee"
+      ],
+      "doi": "10.1109/TASC.2023.3340648",
+      "url": "https://doi.org/10.1109/TASC.2023.3340648"
+    }
+  ],
+  "awards": [
+    {
+      "title": "Best Senior Project",
+      "awarder": "Bo\u011fazi\u00e7i University"
+    },
+    {
+      "title": "High Honor",
+      "awarder": "Bo\u011fazi\u00e7i University"
+    }
+  ]
+}
