@@ -7,66 +7,9 @@ from langchain_openai import ChatOpenAI, OpenAI
 from langchain_google_genai import GoogleGenerativeAI
 from langchain_deepseek import ChatDeepSeek
 import os
+import re
 from .modelmanager import SimpleModelManager
-from langchain_core.pydantic_v1 import BaseModel, Field, validator
-from typing import Dict, Any, List, Optional
-from langchain.output_parsers import PydanticOutputParser
 logger = logging.getLogger(__name__)
-
-
-# Define Pydantic models for resume sections
-
-class EnhancedSummary(BaseModel):
-    optimized_summary: str = Field(description="Rewritten summary that follows the STRICT word limit and content constraints.")
-
-class EnhancedExperience(BaseModel):
-    optimized_experience: List[str] = Field(description="List of EXACTLY 5 bullet points per experience entry, formatted according to the given constraints.")
-
-class EnhancedEducation(BaseModel):
-    optimized_education: List[str] = Field(description="List of EXACTLY 3 education bullet points with STRICT adherence to word limits and abbreviations.")
-
-class EnhancedProjects(BaseModel):
-    optimized_projects: List[str] = Field(description="List of EXACTLY 5 formatted project bullet points with technical depth.")
-
-class EnhancedSkills(BaseModel):
-    optimized_skills: Dict[str, List[str]] = Field(description="Skills categorized into EXACTLY 4 categories, each containing EXACTLY 4 specialized skills.")
-
-class EnhancedAwards(BaseModel):
-    optimized_awards: List[str] = Field(description="List of optimized award descriptions following the STRICT format.")
-
-class EnhancedResume(BaseModel):
-    optimized_summary: Optional[str] = None
-    optimized_experience: Optional[List[str]] = None
-    optimized_education: Optional[List[str]] = None
-    optimized_projects: Optional[List[str]] = None
-    optimized_skills: Optional[Dict[str, List[str]]] = None
-    optimized_awards: Optional[List[str]] = None
-
-    @validator('optimized_experience')
-    def validate_experience_format(cls, v):
-        if v is not None:
-            # Validate each experience entry has exactly 5 bullet points
-            if not all(isinstance(entry, str) for entry in v):
-                raise ValueError("All experience entries must be strings")
-        return v
-
-    @validator('optimized_education')
-    def validate_education_format(cls, v):
-        if v is not None:
-            # Validate education has exactly 3 bullet points
-            if not all(isinstance(entry, str) for entry in v):
-                raise ValueError("All education entries must be strings")
-        return v
-
-    @validator('optimized_skills')
-    def validate_skills_format(cls, v):
-        if v is not None:
-            # Validate skills structure
-            for category, skills in v.items():
-                if not isinstance(skills, list):
-                    raise ValueError(f"Skills for category '{category}' must be a list")
-        return v
-
 
 TEMPLATE_PROMPTS = {
     "simple": {
@@ -74,7 +17,7 @@ TEMPLATE_PROMPTS = {
             {
                 "name": "summary",
                 "type": "string",
-                "description": "Generate a concise and impactful summary of STRICTLY 45-60 words. Highlight ONLY core skills, key strengths, and MEASURABLE impact. AVOID fluff or vague language. Use PRECISE, ATS-friendly terminology."
+                "description": "Generate a concise and impactful summary of STRICTLY 45-50 words. Highlight ONLY core skills, key strengths, and MEASURABLE impact. AVOID fluff or vague language. Use PRECISE, ATS-friendly terminology."
             },
             {
                 "name": "experience",
@@ -425,56 +368,32 @@ SECTION_PROMPTS = {
 }
 
 def clean_llm_response(response_text: str) -> str:
-    """Clean the LLM response by extracting and formatting valid JSON content using Pydantic."""
-    try:
-        # Initialize the parser with our model
-        parser = PydanticOutputParser(pydantic_object=EnhancedResume)
-        
-        # Remove any markdown code blocks if present
-        cleaned_text = response_text.replace("```json", "").replace("```", "").strip()
-        
-        # Try to parse the response directly
-        try:
-            parsed_obj = parser.parse(cleaned_text)
-            return json.dumps(parsed_obj.dict(exclude_none=True), indent=2)
-        except Exception as direct_parse_error:
-            # If direct parsing fails, try to parse as raw JSON
-            try:
-                json_data = json.loads(cleaned_text)
-                return json.dumps(json_data, indent=2)
-            except json.JSONDecodeError:
-                logger.error(f"Failed to parse JSON: {str(direct_parse_error)}")
-                return "No valid JSON found"
-    except Exception as e:
-        logger.error(f"Error in clean_llm_response: {str(e)}")
-        return "Invalid JSON format"
+    """Clean the LLM response by extracting and formatting valid JSON content."""
 
-from langchain.output_parsers import PydanticOutputParser
+    match = re.search(r'(\{.*\}|\[.*\])', response_text, re.DOTALL)
+    if match:
+        cleaned = match.group(0).replace('\n', '').strip()
+        try:
+            json_data = json.loads(cleaned)
+            return json.dumps(json_data, indent=2) 
+        except json.JSONDecodeError:
+            return "Invalid JSON format"
+    return "No valid JSON found"
+
 def parse_json_safely(text: str) -> Dict:
-    """Safely parse JSON using Pydantic models for validation."""
+    """Safely parse JSON, handling potential errors."""
     try:
-        # First try to parse as regular JSON
         return json.loads(text)
     except json.JSONDecodeError as e:
         logger.error(f"JSON parsing error: {str(e)}, text: {text[:100]}...")
-        
+        text = text.replace("'", '"')
+
+        import re
+        text = re.sub(r'([{,])\s*(\w+):', r'\1"\2":', text)
         try:
-            # Fix common JSON issues (replace single quotes with double quotes)
-            text = text.replace("'", '"')
-            
-            # Try parsing again
             return json.loads(text)
-        except Exception as second_error:
-            logger.error(f"Secondary parsing error: {str(second_error)}")
-            
-            try:
-                # As a last resort, try using the Pydantic parser
-                parser = PydanticOutputParser(pydantic_object=EnhancedResume)
-                parsed_obj = parser.parse(text)
-                return parsed_obj.dict(exclude_none=True)
-            except:
-                logger.error("All parsing attempts failed")
-                return {}
+        except:
+            return {}
 
 def get_template_params_for_section(section_name: str, template_type: str = "simple") -> Dict[str, str]:
     """
@@ -634,19 +553,20 @@ async def enhance_resume_section(
     job_description: Optional[str] = None,
     template_type: str = "simple"
 ) -> Dict[str, Any]:
+    """Enhance a single section of the resume using the LLM."""
     try:
-        logger.info(f"[DEBUG] Enhancing section: {section_name}")
-        logger.info(f"[DEBUG] Section input: {section_data}")
+        logger.info(f"Enhancing section: {section_name} with template: {template_type}")
+        
         section_prompt = create_section_prompt(
             section_name, 
             section_data, 
             job_description,
             template_type
         )
-        logger.info(f"[DEBUG] Section prompt for {section_name}: {section_prompt}")
+
+        # Call the model
         response = await model.ainvoke(section_prompt)
         response_text = extract_response_text(response, model)
-        logger.info(f"[DEBUG] Section model response for {section_name}: {response_text}")
         cleaned_response = clean_llm_response(response_text)
         
         # Get token counts using our comprehensive function
@@ -691,7 +611,6 @@ async def enhance_resume_by_sections(
         has_details_wrapper = False
     
     logger.info(f"Starting resume enhancement with template_type: {template_type}")
-    
     
     # Convert template_type to lowercase for case-insensitive comparison
     template_type = template_type.lower()
@@ -925,4 +844,3 @@ async def debug_resume_enhancement(json_data: Dict[str, Any]) -> Dict[str, Any]:
         # Return original with error info
         json_data["error"] = str(e)
         return json_data
-
