@@ -7,9 +7,111 @@ from langchain_openai import ChatOpenAI, OpenAI
 from langchain_google_genai import GoogleGenerativeAI
 from langchain_deepseek import ChatDeepSeek
 import os
-import re
 from .modelmanager import SimpleModelManager
+from pydantic import BaseModel, Field, field_validator
+from typing import Dict, Any, List, Optional
+from langchain.output_parsers import PydanticOutputParser
 logger = logging.getLogger(__name__)
+
+# Define Pydantic models for resume sections
+
+class EnhancedSummary(BaseModel):
+    summary: str = Field(description="Rewritten summary that follows the STRICT word limit and content constraints.")
+
+class EnhancedExperience(BaseModel):
+    experience: List[str] = Field(description="List of EXACTLY 5 bullet points per experience entry, formatted according to the given constraints.")
+
+class EnhancedEducation(BaseModel):
+    education: List[str] = Field(description="List of EXACTLY 2 education bullet points with STRICT adherence to word limits and abbreviations.")
+
+class EnhancedProjects(BaseModel):
+    projects: List[str] = Field(description="List of EXACTLY 5 formatted project bullet points with technical depth.")
+
+class EnhancedSkills(BaseModel):
+    skills: Dict[str, List[str]] = Field(description="Skills categorized into EXACTLY 4 categories, each containing EXACTLY 4 specialized skills.")
+
+class EnhancedAwards(BaseModel):
+    awards: List[str] = Field(description="List of optimized award descriptions following the STRICT format.")
+
+class EnhancedResume(BaseModel):
+    summary: Optional[str] = None
+    experience: Optional[List[str]] = None
+    education: Optional[List[str]] = None
+    projects: Optional[List[str]] = None
+    skills: Optional[Dict[str, List[str]]] = None
+    awards: Optional[List[str]] = None
+
+    @field_validator('experience')
+    @classmethod
+    def validate_experience_format(cls, v):
+        if v is not None:
+            # Validate each experience entry has exactly 5 bullet points
+            if not all(isinstance(entry, str) for entry in v):
+                raise ValueError("All experience entries must be strings")
+        return v
+
+    @field_validator('education')
+    @classmethod
+    def validate_education_format(cls, v):
+        if v is not None:
+            # Validate education has exactly 3 bullet points
+            if not all(isinstance(entry, str) for entry in v):
+                raise ValueError("All education entries must be strings")
+        return v
+
+    @field_validator('skills')
+    @classmethod
+    def validate_skills_format(cls, v):
+        if v is not None:
+            # Validate skills structure
+            for category, skills in v.items():
+                if not isinstance(skills, list):
+                    raise ValueError(f"Skills for category '{category}' must be a list")
+        return v
+
+# Create parsers for different template types
+simple_parser = PydanticOutputParser(pydantic_object=EnhancedResume)
+software_engineer_parser = PydanticOutputParser(pydantic_object=EnhancedResume)
+
+# Create section-specific parsers
+summary_parser = PydanticOutputParser(pydantic_object=EnhancedSummary)
+experience_parser = PydanticOutputParser(pydantic_object=EnhancedExperience)
+education_parser = PydanticOutputParser(pydantic_object=EnhancedEducation)
+projects_parser = PydanticOutputParser(pydantic_object=EnhancedProjects)
+skills_parser = PydanticOutputParser(pydantic_object=EnhancedSkills)
+awards_parser = PydanticOutputParser(pydantic_object=EnhancedAwards)
+
+# Get format instructions
+simple_format_instructions = simple_parser.get_format_instructions()
+software_engineer_format_instructions = software_engineer_parser.get_format_instructions()
+
+# Generate format instructions for each section
+summary_format_instructions = summary_parser.get_format_instructions()
+experience_format_instructions = experience_parser.get_format_instructions()
+education_format_instructions = education_parser.get_format_instructions()
+projects_format_instructions = projects_parser.get_format_instructions()
+skills_format_instructions = skills_parser.get_format_instructions()
+awards_format_instructions = awards_parser.get_format_instructions()
+
+# Store parsers in a mapping for easy reference
+section_parsers = {
+    "summary": summary_parser,
+    "experience": experience_parser,
+    "education": education_parser,
+    "projects": projects_parser,
+    "skills": skills_parser,
+    "awards": awards_parser
+}
+
+# Store format instructions in a mapping
+section_format_instructions = {
+    "summary": summary_format_instructions,
+    "experience": experience_format_instructions,
+    "education": education_format_instructions,
+    "projects": projects_format_instructions,
+    "skills": skills_format_instructions,
+    "awards": awards_format_instructions
+}
 
 TEMPLATE_PROMPTS = {
     "simple": {
@@ -17,7 +119,7 @@ TEMPLATE_PROMPTS = {
             {
                 "name": "summary",
                 "type": "string",
-                "description": "Generate a concise and impactful summary of STRICTLY 45-50 words. Highlight ONLY core skills, key strengths, and MEASURABLE impact. AVOID fluff or vague language. Use PRECISE, ATS-friendly terminology."
+                "description": "Generate a concise and impactful summary of STRICTLY 45-60 words. Highlight ONLY core skills, key strengths, and MEASURABLE impact. AVOID fluff or vague language. Use PRECISE, ATS-friendly terminology."
             },
             {
                 "name": "experience",
@@ -45,126 +147,87 @@ TEMPLATE_PROMPTS = {
                 "description": "Summarize EACH award in a SINGLE, IMPACTFUL sentence of STRICTLY 20-25 words. EMPHASIZE significance, outcome, or recognition criteria. EACH summary MUST include AT LEAST ONE metric or QUANTIFIABLE impact."
             }
         ],
-        "prompt_template": "Analyze the following resume details and optimize them according to STRICT formatting constraints:\n\nSummary: {{summary}}\n\nExperience:\n{{experience}}\n\nEducation:\n{{education}}\n\nProjects:\n{{projects}}\n\nSkills:\n{{skills}}\n\nAwards:\n{{awards}}\n\nSTRICTLY enforce all length limits, structural constraints, and ATS optimization techniques. Ensure all sections adhere to the defined rules without exception.",
-        "response_schema": {
-            "type": "object",
-            "properties": {
-                "optimized_summary": {
-                    "type": "string",
-                    "description": "Rewritten summary that follows the STRICT word limit and content constraints."
-                },
-                "optimized_experience": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "description": "List of EXACTLY 5 bullet points per experience entry, formatted according to the given constraints."
-                },
-                "optimized_education": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "description": "List of EXACTLY 3 education bullet points with STRICT adherence to word limits and abbreviations."
-                },
-                "optimized_projects": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "description": "List of EXACTLY 5 formatted project bullet points with technical depth."
-                },
-                "optimized_skills": {
-                    "type": "object",
-                    "description": "Skills categorized into EXACTLY 4 categories, each containing EXACTLY 4 specialized skills."
-                },
-                "optimized_awards": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "description": "List of optimized award descriptions following the STRICT format."
-                }
-            }
-        }
+        "prompt_template": f"""Analyze the following resume details and optimize them according to STRICT formatting constraints:
+
+Summary: {{summary}}
+
+Experience:
+{{experience}}
+
+Education:
+{{education}}
+
+Projects:
+{{projects}}
+
+Skills:
+{{skills}}
+
+Awards:
+{{awards}}
+
+STRICTLY enforce all length limits, structural constraints, and ATS optimization techniques. Ensure all sections adhere to the defined rules without exception.
+
+{simple_format_instructions}
+"""
     },
     "software_engineer": {
-    "parameters": [
-        {
-        "name": "summary",
-        "type": "string",
-        "description": "Generate a technical summary of exactly 55-60 words focusing on specialized programming skills, achievements, and measurable impact. MUST incorporate at least 5 ATS-relevant technical keywords for improved searchability."
-        },
-        {
-        "name": "experience",
-        "type": "string",
-        "description": "Each experience section MUST contain exactly 5 bullet points. DEFAULT to two-line entries (28-32 words) that demonstrate technical challenges solved and measurable outcomes. Only use one-line entries (15-16 words) when content absolutely cannot be expanded. Each bullet MUST start with a technical action verb."
-        },
-        {
-        "name": "education",
-        "type": "string",
-        "description": "Degree name should be in short like ME, BE. Education details MUST include exactly 3 bullet points. Each point MUST be 10-13 words long, highlighting relevant technical coursework, certifications, or achievements. Strictly use degree abbreviations like 'BSc', 'MSc', 'BE', 'BTech', etc."
-        },
-        {
-        "name": "projects",
-        "type": "string",
-        "description": "Each project section MUST include exactly 5 bullet points. DEFAULT to two-line entries (28-32 words) focusing on technical challenges solved and quantifiable outcomes. Only use one-line entries (15-16 words) when content absolutely cannot be expanded. Each bullet MUST include at least one technical term or technology."
-        },
-        {
-        "name": "skills",
-        "type": "string",
-        "description": "List skills under exactly 5 technical categories with exactly 4 specialized skills per category. Each skill MUST be a specific technology, language, framework, or methodology relevant to software engineering."
-        },
-        {
-        "name": "awards",
-        "type": "string",
-        "description": "Summarize each award in a single impactful sentence of exactly 20-25 words highlighting technical achievements, innovation metrics, or leadership outcomes. Each summary MUST include at least one technical term or quantifiable result."
-        }
-    ],
-    "prompt_template": "Analyze the following resume details and optimize them according to ATS-friendly software engineering standards:\n\nSummary: {{summary}}\n\nExperience:\n{{experience}}\n\nEducation:\n{{education}}\n\nProjects:\n{{projects}}\n\nSkills:\n{{skills}}\n\nAwards:\n{{awards}}\n\nEnsure each section follows strict formatting rules, maintains technical depth, and maximizes keyword optimization for better searchability.",
-    "response_schema": {
-        "type": "object",
-        "properties": {
-        "optimized_summary": {
-            "type": "string",
-            "description": "Rewritten summary that follows the required format."
-        },
-        "optimized_experience": {
-            "type": "array",
-            "items": {
-            "type": "string"
+        "parameters": [
+            {
+                "name": "summary",
+                "type": "string",
+                "description": "Generate a technical summary of exactly 55-60 words focusing on specialized programming skills, achievements, and measurable impact. MUST incorporate at least 5 ATS-relevant technical keywords for improved searchability."
             },
-            "description": "List of exactly 5 bullet points for each experience entry, formatted according to the given constraints."
-        },
-        "optimized_education": {
-            "type": "array",
-            "items": {
-            "type": "string"
+            {
+                "name": "experience",
+                "type": "string",
+                "description": "Each experience section MUST contain exactly 5 bullet points. DEFAULT to two-line entries (28-32 words) that demonstrate technical challenges solved and measurable outcomes. Only use one-line entries (15-16 words) when content absolutely cannot be expanded. Each bullet MUST start with a technical action verb."
             },
-            "description": "List of 3 education bullet points with strict adherence to word limits and abbreviations."
-        },
-        "optimized_projects": {
-            "type": "array",
-            "items": {
-            "type": "string"
+            {
+                "name": "education",
+                "type": "string",
+                "description": "Degree name should be in short like ME, BE. Education details MUST include exactly 3 bullet points. Each point MUST be 10-13 words long, highlighting relevant technical coursework, certifications, or achievements. Strictly use degree abbreviations like 'BSc', 'MSc', 'BE', 'BTech', etc."
             },
-            "description": "List of 5 formatted project bullet points with technical depth."
-        },
-        "optimized_skills": {
-            "type": "object",
-            "description": "Skills categorized into exactly 5 technical categories, each containing exactly 4 specialized skills."
-        },
-        "optimized_awards": {
-            "type": "array",
-            "items": {
-            "type": "string"
+            {
+                "name": "projects",
+                "type": "string", 
+                "description": "Each project section MUST include exactly 5 bullet points. DEFAULT to two-line entries (28-32 words) focusing on technical challenges solved and quantifiable outcomes. Only use one-line entries (15-16 words) when content absolutely cannot be expanded. Each bullet MUST include at least one technical term or technology."
             },
-            "description": "List of optimized award descriptions following the required format."
-        }
-        }
-    }
-    }
+            {
+                "name": "skills",
+                "type": "string",
+                "description": "List skills under exactly 5 technical categories with exactly 4 specialized skills per category. Each skill MUST be a specific technology, language, framework, or methodology relevant to software engineering."
+            },
+            {
+                "name": "awards",
+                "type": "string",
+                "description": "Summarize each award in a single impactful sentence of exactly 20-25 words highlighting technical achievements, innovation metrics, or leadership outcomes. Each summary MUST include at least one technical term or quantifiable result."
+            }
+        ],
+        "prompt_template": f"""Analyze the following resume details and optimize them according to ATS-friendly software engineering standards:
 
+Summary: {{summary}}
+
+Experience:
+{{experience}}
+
+Education:
+{{education}}
+
+Projects:
+{{projects}}
+
+Skills:
+{{skills}}
+
+Awards:
+{{awards}}
+
+Ensure each section follows strict formatting rules, maintains technical depth, and maximizes keyword optimization for better searchability.
+
+{software_engineer_format_instructions}
+"""
+    }
 }
 
 SECTION_PROMPTS = {
@@ -195,6 +258,8 @@ SECTION_PROMPTS = {
         
         ORIGINAL CONTENT:
         {original_content}
+
+        {format_instructions}
         
         **Ensure a professional and concise summary with at most one measurable outcome.**  
         **Return ONLY the enhanced JSON for this section.** 
@@ -240,6 +305,9 @@ SECTION_PROMPTS = {
         
         ORIGINAL CONTENT:
         {original_content}
+
+        {format_instructions}
+
         **Ensure exactly two bullet points per job contain measurable outcomes.**   
         **Return ONLY the enhanced JSON for this section.**
         **Maintain the EXACT SAME structure but enhance the content.**
@@ -260,6 +328,8 @@ SECTION_PROMPTS = {
         
         ORIGINAL CONTENT:
         {original_content}
+
+        {format_instructions}
         
         Return ONLY the enhanced JSON for this section.
         Maintain the EXACT SAME structure but enhance the content.
@@ -280,6 +350,8 @@ SECTION_PROMPTS = {
         
         ORIGINAL CONTENT:
         {original_content}
+
+        {format_instructions}
         
         Return ONLY the enhanced JSON for this section.
         Maintain the EXACT SAME structure but enhance the content.
@@ -319,6 +391,8 @@ SECTION_PROMPTS = {
         
         ORIGINAL CONTENT:
         {original_content}
+
+        {format_instructions}
         
         **Ensure exactly two bullet points per project contain measurable outcomes.**  
         **Return ONLY the enhanced JSON for this section.**
@@ -340,6 +414,8 @@ SECTION_PROMPTS = {
         
         ORIGINAL CONTENT:
         {original_content}
+
+        {format_instructions}
         
         Return ONLY the enhanced JSON for this section.
         Maintain the EXACT SAME structure but enhance the content.
@@ -361,40 +437,72 @@ SECTION_PROMPTS = {
         
         ORIGINAL CONTENT:
         {original_content}
+
+        {format_instructions}
         
         Return ONLY the enhanced JSON for this section.
         Maintain the EXACT SAME structure but enhance the content.
     """
 }
 
-def clean_llm_response(response_text: str) -> str:
-    """Clean the LLM response by extracting and formatting valid JSON content."""
-
-    match = re.search(r'(\{.*\}|\[.*\])', response_text, re.DOTALL)
-    if match:
-        cleaned = match.group(0).replace('\n', '').strip()
+def clean_llm_response(response_text: str, section_name: str) -> str:
+    """Clean the LLM response by extracting and formatting valid JSON content using Pydantic."""
+    try:
+        # Get the appropriate parser for this section
+        section_name_mapping = {
+            "basics": "summary",
+            "work": "experience"
+        }
+        mapped_section = section_name_mapping.get(section_name, section_name)
+        
+        # Get the parser for this section, falling back to EnhancedResume parser if not found
+        parser = section_parsers.get(mapped_section, PydanticOutputParser(pydantic_object=EnhancedResume))
+        
+        # Remove any markdown code blocks if present
+        cleaned_text = response_text.replace("```json", "").replace("```", "").strip()
+        
+        # Try to parse the response directly
         try:
-            json_data = json.loads(cleaned)
-            return json.dumps(json_data, indent=2) 
-        except json.JSONDecodeError:
-            return "Invalid JSON format"
-    return "No valid JSON found"
+            parsed_obj = parser.parse(cleaned_text)
+            return json.dumps(parsed_obj.model_dump(exclude_none=True), indent=2)
+        except Exception as direct_parse_error:
+            # If direct parsing fails, try to parse as raw JSON
+            try:
+                json_data = json.loads(cleaned_text)
+                return json.dumps(json_data, indent=2)
+            except json.JSONDecodeError:
+                logger.error(f"Failed to parse JSON: {str(direct_parse_error)}")
+                return "No valid JSON found"
+    except Exception as e:
+        logger.error(f"Error in clean_llm_response: {str(e)}")
+        return "Invalid JSON format"
 
 def parse_json_safely(text: str) -> Dict:
-    """Safely parse JSON, handling potential errors."""
+    """Safely parse JSON using Pydantic models for validation."""
     try:
+        # First try to parse as regular JSON
         return json.loads(text)
     except json.JSONDecodeError as e:
         logger.error(f"JSON parsing error: {str(e)}, text: {text[:100]}...")
-        text = text.replace("'", '"')
-
-        import re
-        text = re.sub(r'([{,])\s*(\w+):', r'\1"\2":', text)
+        
         try:
+            # Fix common JSON issues (replace single quotes with double quotes)
+            text = text.replace("'", '"')
+            
+            # Try parsing again
             return json.loads(text)
-        except:
-            return {}
-
+        except Exception as second_error:
+            logger.error(f"Secondary parsing error: {str(second_error)}")
+            
+            try:
+                # As a last resort, try using the Pydantic parser
+                parser = PydanticOutputParser(pydantic_object=EnhancedResume)
+                parsed_obj = parser.parse(text)
+                return parsed_obj.model_dump(exclude_none=True)  # Use model_dump() instead of dict()
+            except:
+                logger.error("All parsing attempts failed")
+                return {}
+            
 def get_template_params_for_section(section_name: str, template_type: str = "simple") -> Dict[str, str]:
     """
     Extract formatting parameters for a specific section from MCP template.
@@ -441,13 +549,18 @@ def create_section_prompt(
     }
     
     mcp_section_name = section_name_mapping.get(section_name, section_name)
+
+    # Get section-specific format instructions
+    format_instructions = section_format_instructions.get(section_name, 
+                                                       section_format_instructions.get(mcp_section_name, ""))
     
     if section_name in SECTION_PROMPTS:
         section_prompt = SECTION_PROMPTS[section_name]
         
         section_prompt = section_prompt.replace("{job_description}", job_description or "Not provided")
         section_prompt = section_prompt.replace("{original_content}", json.dumps(section_data, indent=2))
-        
+        section_prompt = section_prompt.replace("{format_instructions}", format_instructions)
+
         for param in template_prompts.get("parameters", []):
             if param["name"] == mcp_section_name and "description" in param:
                 description_placeholder = f"{{{mcp_section_name}_description}}"
@@ -499,6 +612,8 @@ def create_section_prompt(
             
             ORIGINAL CONTENT:
             {json.dumps(section_data, indent=2)}
+
+            {format_instructions}
             
             Return ONLY the enhanced JSON for this section.
             Maintain the EXACT SAME structure but enhance the content.
@@ -518,6 +633,8 @@ def create_section_prompt(
         
         ORIGINAL CONTENT:
         {json.dumps(section_data, indent=2)}
+
+        {format_instructions}
         
         Return ONLY the enhanced JSON for this section.
         Maintain the EXACT SAME structure but enhance the content.
@@ -555,6 +672,7 @@ async def enhance_resume_section(
 ) -> Dict[str, Any]:
     """Enhance a single section of the resume using the LLM."""
     try:
+        logger.info(f"[DEBUG] Enhancing section: {section_name}")
         logger.info(f"Enhancing section: {section_name} with template: {template_type}")
         
         section_prompt = create_section_prompt(
@@ -565,9 +683,11 @@ async def enhance_resume_section(
         )
 
         # Call the model
+        logger.info(f"[DEBUG] Section prompt for {section_name}: {section_prompt}")
         response = await model.ainvoke(section_prompt)
         response_text = extract_response_text(response, model)
-        cleaned_response = clean_llm_response(response_text)
+        logger.info(f"[DEBUG] Section model response for {section_name}: {response_text}")
+        cleaned_response = clean_llm_response(response_text, section_name)
         
         # Get token counts using our comprehensive function
         token_counts = get_token_counts_from_response(response)
@@ -614,7 +734,7 @@ async def enhance_resume_by_sections(
     
     # Convert template_type to lowercase for case-insensitive comparison
     template_type = template_type.lower()
-    
+
     enhancement_tasks = {}
     for section_name, section_data in resume_data.items():
         task = asyncio.create_task(
@@ -844,3 +964,4 @@ async def debug_resume_enhancement(json_data: Dict[str, Any]) -> Dict[str, Any]:
         # Return original with error info
         json_data["error"] = str(e)
         return json_data
+
