@@ -385,12 +385,13 @@ class SentenceEnhanceView(APIView):
     - POST: Enhance sentences only
     """
     
-    def get(self, request, resume_id=None):
+    def get(self, request):
         """
         GET method to retrieve suggestion questions for a specific resume.
-        URL: /resumes/suggestion-questions/{resume_id}/
+        URL: /resumes/enhance-sentences/?resume_id=YOUR_RESUME_ID
         """
-        return async_to_sync(self._async_get)(request, resume_id)
+        return async_to_sync(self._async_get)(request)
+    
     def post(self, request):
         """
         POST method for sentence enhancement only.
@@ -401,9 +402,12 @@ class SentenceEnhanceView(APIView):
     async def _async_get(self, request):
         """Async GET handler for suggestion questions"""
         try:
-            if not request.resume_id:
+
+            resume_id = request.GET.get('resume_id')
+
+            if not resume_id:
                 return Response(
-                    {"error": "Resume ID is required"},
+                    {"error": "Resume ID is required as query parameter (?resume_id=YOUR_RESUME_ID)"},
                     status=status.HTTP_400_BAD_REQUEST
                 )
             
